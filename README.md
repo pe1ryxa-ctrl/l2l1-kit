@@ -7,7 +7,7 @@
 ## Структура
 ```
 l2l1-kit/
-├── sync.py                       # генератор (Python 3.11+, без залежностей)
+├── sync.py                       # генератор (Python 3.8+, без залежностей)
 ├── templates/
 │   ├── CLAUDE.md                 # протокол Архітектора; §2 (таблиця) і §6 (протоколи) — з ecosystem.toml / claude.extra.md
 │   ├── AGENTS.md                 # контракт L1 (шапка); «Специфіка» — з <P>/.agents/agents.local.md

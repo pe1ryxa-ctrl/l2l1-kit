@@ -8,6 +8,8 @@ l2l1-kit · sync.py — розгортає/оновлює протокол L2/L1
     python <kit>/sync.py --no-global     # не чіпати ~/.gemini/config
     python <kit>/sync.py --git-init      # git init + .gitignore/.env.template у підпроєктах без .git
     python <kit>/sync.py --root <path>   # корінь екосистеми, якщо запускаєш не з нього
+    python <kit>/sync.py --gemini-config <path>   # якщо ~/.gemini/config не там, де HOME (напр. у VM)
+    python <kit>/sync.py --display-root <path> --display-gemini-config <path>   # шляхи, які писати у файли, якщо запуск через mount
 
 Що генерується (перезаписується при кожному sync — НЕ правити руками):
     <root>/CLAUDE.md                        з templates/CLAUDE.md + ecosystem.toml + <root>/claude.extra.md
@@ -22,14 +24,49 @@ l2l1-kit · sync.py — розгортає/оновлює протокол L2/L1
     <root>/<P>/.agents/agents.local.md       («Специфіка» підпроєкту; джерело — bootstrap із ecosystem.toml, якщо задано)
     <root>/<P>/.agents/rules/project-rules.md (скелет)
     <root>/<P>/.agents/tasks/done/.gitkeep
-Потребує Python 3.11+ (tomllib у стандартній бібліотеці). Залежностей немає.
+Python 3.8+; на 3.11+ використовує tomllib, інакше — вбудований міні-парсер TOML. Залежностей немає.
 """
 import argparse, os, sys, shutil, io, datetime, subprocess
 
 try:
-    import tomllib
+    import tomllib  # Python 3.11+
 except ModuleNotFoundError:
-    sys.exit("Потрібен Python 3.11+ (модуль tomllib). Поточна версія: " + sys.version.split()[0])
+    tomllib = None
+
+
+def _mini_toml(text):
+    """Мінімальний парсер підмножини TOML для ecosystem.toml (Python < 3.11):
+    key = "str" | true/false | 123 | ["a", "b"]; секції [[name]]; коментарі #."""
+    import re
+    root, cur = {}, None
+    def val(s):
+        s = s.strip()
+        if s.startswith('"'):
+            return bytes(s[1:s.rindex('"')], "utf-8").decode("unicode_escape").encode("latin-1").decode("utf-8")
+        if s.startswith("'"):
+            return s[1:s.rindex("'")]
+        if s in ("true", "false"):
+            return s == "true"
+        if s.startswith("["):
+            inner = s[1:s.rindex("]")]
+            return [val(x) for x in re.findall(r'"(?:[^"\\]|\\.)*"|\'[^\']*\'|[^,\s]+', inner)] if inner.strip() else []
+        try:
+            return int(s)
+        except ValueError:
+            return s
+    for raw in text.splitlines():
+        line = raw.split(" #")[0].strip() if not raw.strip().startswith("#") else ""
+        if not line:
+            continue
+        m = re.match(r"^\[\[(\w+)\]\]$", line)
+        if m:
+            cur = {}
+            root.setdefault(m.group(1), []).append(cur)
+            continue
+        m = re.match(r"^(\w+)\s*=\s*(.+)$", line)
+        if m:
+            (cur if cur is not None else root)[m.group(1)] = val(m.group(2))
+    return root
 
 KIT = os.path.dirname(os.path.abspath(__file__))
 TPL = os.path.join(KIT, "templates")
@@ -91,20 +128,28 @@ def main():
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--no-global", action="store_true")
     ap.add_argument("--git-init", action="store_true")
+    ap.add_argument("--gemini-config", default=None, help="шлях до глобального конфігу Gemini (за замовчуванням ~/.gemini/config)")
+    ap.add_argument("--display-root", default=None, help="як записувати шлях кореня в згенерованих файлах (якщо запускаєш через mount/VM)")
+    ap.add_argument("--display-gemini-config", default=None, help="як записувати шлях конфігу Gemini в згенерованих файлах")
     a = ap.parse_args()
     root = os.path.abspath(a.root)
     cfg_path = os.path.join(root, "ecosystem.toml")
     if not os.path.exists(cfg_path):
         sys.exit(f"Не знайдено {cfg_path}. Запускай з кореня екосистеми або передай --root.")
-    with open(cfg_path, "rb") as f:
-        cfg = tomllib.load(f)
+    if tomllib:
+        with open(cfg_path, "rb") as f:
+            cfg = tomllib.load(f)
+    else:
+        cfg = _mini_toml(read(cfg_path))
     dry = a.check
     sep = os.sep
-    gemini_cfg = os.path.join(os.path.expanduser("~"), ".gemini", "config")
+    gemini_cfg = os.path.abspath(a.gemini_config) if a.gemini_config else os.path.join(os.path.expanduser("~"), ".gemini", "config")
     eco = cfg["name"]
     results = []
 
-    base = {"ECOSYSTEM": eco, "ROOT": root, "SEP": sep, "GEMINI_CONFIG": gemini_cfg}
+    droot = a.display_root or root
+    dgem = a.display_gemini_config or gemini_cfg
+    base = {"ECOSYSTEM": eco, "ROOT": droot, "SEP": sep, "GEMINI_CONFIG": dgem}
 
     # --- корінь ---
     extra_path = os.path.join(root, "claude.extra.md")
@@ -113,7 +158,7 @@ def main():
     protocols = read(extra_path).strip() if os.path.exists(extra_path) else ""
     protocols = "\n".join(l for l in protocols.splitlines() if not l.strip().startswith("<!--"))
     claude = render(read(os.path.join(TPL, "CLAUDE.md")), {**base,
-                    "PROJECT_TABLE": project_table(cfg, root, sep),
+                    "PROJECT_TABLE": project_table(cfg, droot, sep),
                     "ECOSYSTEM_PROTOCOLS": protocols})
     results.append((write(os.path.join(root, "CLAUDE.md"), with_mark(claude, "CLAUDE.md", "зміни в kit, ecosystem.toml або claude.extra.md"), dry), "CLAUDE.md"))
     tt = render(read(os.path.join(TPL, "TASK_TEMPLATE.md")), base)
@@ -129,7 +174,7 @@ def main():
     for p in cfg.get("projects", []):
         d = os.path.join(root, p["dir"])
         ag = os.path.join(d, ".agents")
-        ws = root + sep + p["dir"]
+        ws = droot + sep + p["dir"]
         local_path = os.path.join(ag, "agents.local.md")
         if not os.path.exists(local_path):
             src = p.get("local")
