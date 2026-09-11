@@ -1,0 +1,22 @@
+# ecosystem.toml — опис екосистеми для l2l1-kit/sync.py. Лежить у корені meta-репозиторію.
+# Машинно-незалежний: корінь = місце, де лежить цей файл; шляхи в CLAUDE.md/AGENTS.md sync.py підставляє сам.
+name = "Kambala"
+tags_reserved = ["DDL", "STC", "SRC", "DAI", "HUB"]     # теги інших екосистем (ліміти Gemini спільні → ID унікальні)
+table_note = "`docs/` (ТЗ, мануали) — частина meta-репозиторію кореня, зона Gans і Claude."
+
+[[projects]]
+dir = "server"
+tag = "KSRV"
+ssot = "SRV"
+title = "Ground Control Server (FastAPI)"
+target = "VPS `kambala.net`, локально — цей ПК"
+rules = "деплой на VPS і зміни WireGuard/NAT — лише за командою Gans; секрети тільки в `.env`"
+hil = false
+local = "bootstrap/server.agents.local.md"     # джерело «Специфіки» при першому sync (далі живе в <P>/.agents/agents.local.md)
+
+[[planned]]
+dir = "node"
+tag = "KNODE"
+title = "Node firmware"
+target = "Pico 2 (CAN, PoE-лінія)"
+rules = "HIL-gate обов'язковий"
