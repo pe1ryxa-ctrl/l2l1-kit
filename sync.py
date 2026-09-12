@@ -219,7 +219,42 @@ def main():
         print(verb.get(st, st) + name)
     changed = [n for st, n in results if st != "same"]
     print(f"\n{eco}: {len(results)} файлів, {'застарілих' if dry else 'змінено'}: {len(changed)}" + (" — запусти без --check, щоб оновити" if dry and changed else ""))
+    warn_unpushed([KIT, root])
     return 1 if (dry and changed) else 0
+
+
+def warn_unpushed(repos):
+    """Нагадування: локальна правка протоколу не діє на інших машинах, поки не в origin."""
+    import subprocess
+    pending = []
+    for r in repos:
+        try:
+            if subprocess.run(["git", "-C", r, "rev-parse", "--git-dir"],
+                              capture_output=True).returncode != 0:
+                continue
+            up = subprocess.run(["git", "-C", r, "rev-parse", "--abbrev-ref", "@{upstream}"],
+                                capture_output=True, text=True)
+            if up.returncode != 0:
+                pending.append((r, "upstream не налаштований"))
+                continue
+            out = subprocess.run(["git", "-C", r, "log", "--oneline", "@{upstream}..HEAD"],
+                                 capture_output=True, text=True).stdout.strip()
+            dirty = subprocess.run(["git", "-C", r, "status", "--porcelain"],
+                                   capture_output=True, text=True).stdout.strip()
+            why = []
+            if out:
+                why.append(f"{len(out.splitlines())} незапушених комітів")
+            if dirty:
+                why.append(f"{len(dirty.splitlines())} незакомічених файлів")
+            if why:
+                pending.append((r, ", ".join(why)))
+        except Exception:
+            pass
+    if pending:
+        print("\n  !! НЕ В ORIGIN — на інших машинах діятиме стара версія правил:")
+        for r, why in pending:
+            print(f"     {r}: {why}")
+        print("     закоміть і запушіть (git push -u origin main, якщо upstream немає)")
 
 
 if __name__ == "__main__":
