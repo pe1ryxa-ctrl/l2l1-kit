@@ -7,7 +7,7 @@ created: YYYY-MM-DD
 architect: Claude
 hil_required: false      # true лише для задач, що потребують фізичного тесту (Sensor HUB, прошивки)
 model: flash-3.8 high   # рекомендація Архітектора: flash-3.8 high (дефолт) | pro-3.1 | claude-opus — fallback після двох REJECTED поспіль або зациклення
-subagents: review       # review (дефолт) | research | none — read-only субагенти, кількість не обмежена; review = незалежне рев'ю перед Report, research = дослідження + review; none — лише за вказівкою Gans
+subagents: review       # review (дефолт) | research | none — read-only субагенти, кількість не обмежена; review = незалежне рев'ю перед Report, research = дослідження + review; none — лише за вказівкою Gans і означає ЗАБОРОНУ субагентів у цій задачі
 related: []              # ID задач в інших проєктах для крос-проєктних фіч
 ---
 

@@ -44,5 +44,5 @@ python <kit>/sync.py --git-init      # перший раз: створює <P>/.
 - Обмін — лише файли `<P>/.agents/tasks/<TAG>-<NNN>.md`; тригер — `/task <ID>`; task-файли комітяться в git підпроєкту.
 - Кожне ТЗ показується керівнику перед записом. Кожен Report верифікується Архітектором по `git diff`.
 - Holy Trinity веде L1; Global_*, `CLAUDE.md`, `.agents/**` веде Claude. Plan = лише беклог.
-- ADLP, FATAL BOUNDARY CHECK, Errors & Obstacles, HIL-gate (`hil_required`), read-only субагенти (кількість не обмежена; дефолт `subagents: review`) — обов'язкові.
+- ADLP, FATAL BOUNDARY CHECK, Errors & Obstacles, HIL-gate (`hil_required`), read-only субагенти (кількість не обмежена; дефолт `subagents: review`; `none` = заборона субагентів за рішенням керівника) — обов'язкові.
 - Дефолтна модель L1 — Gemini 3.8 Flash, thinking high; `model:` і `subagents:` у frontmatter задачі.
