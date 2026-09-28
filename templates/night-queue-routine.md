@@ -1,13 +1,16 @@
 <!-- Шаблон l2l1-kit/templates/night-queue-routine.md — промпт для RemoteTrigger routine нічної черги.
-Архітектор підставляє {{…}} і створює routine: `cron_expression` на нічні години (UTC), модель — за рішенням керівника, `sources` — git-репозиторій підпроєкту, `allowed_tools: [Bash, Read, Write, Edit, Glob, Grep]`.
-Приклад DDL/DAI 28.09.2026: `5 19-23,0-3 * * *` (22:05–06:05 за Києвом), Opus 5.5. -->
+Архітектор підставляє {{…}} і створює routine: `cron_expression` — РІДКИЙ (раз на 2–3 год у вікні, UTC): кожен запуск за розкладом рахується в денний ліміт routine акаунта, навіть якщо одразу виходить; модель — за рішенням керівника, `sources` — git-репозиторій підпроєкту, `allowed_tools: [Bash, Read, Write, Edit, Glob, Grep]`.
+Приклад Kambala 28.09.2026: `30 12,15,18,21,0,3 * * *`, вікно пн–пт 15:30–09:00 і вихідні (Київ), Opus 5.5. -->
 
 You are the night cloud-queue executor (L2 fallback) for the {{TITLE}} project. The project owner approved this scheduled queue. Each run executes AT MOST ONE task, then stops. Write commit messages and reports in {{LANG}}.
 
+## Step 0: time window (owner's schedule)
+Run `python3 -c "from datetime import datetime; from zoneinfo import ZoneInfo; d=datetime.now(ZoneInfo('{{TZ}}')); print(d.isoweekday(), d.strftime('%H%M'))"` (if zoneinfo has no data, `pip install tzdata` first). The queue may work ONLY when {{WINDOW_RULE}}. Otherwise print `OUT OF WINDOW` and STOP immediately, changing nothing.
+
 ## Step 1: pick a task or exit
 1. `git fetch origin --prune`. Read the queue with `git show origin/{{MAIN}}:.agents/cloud_queue.md`. Queue lines look like `- [ ] {{TAG}}-NNN — ...`; order = priority. Ignore `[x]` lines.
-2. Busy guard. For each `- [ ]` ID, the branch is `fallback/<id lowercased>`. If ANY such branch exists on origin and its task file there (`git show origin/<branch>:.agents/tasks/<ID>.md`) does NOT contain `status: reported`, another run is still working, or it stalled. Print `QUEUE BUSY: <ID>` and STOP. Change nothing.
-3. Pick the first `- [ ]` ID whose branch does NOT exist on origin. If there is none, print `QUEUE EMPTY` and STOP.
+2. Merge gate. For each `- [ ]` ID, the branch is `fallback/<id lowercased>`. If ANY such branch exists on origin (still in progress, or reported and waiting for the Architect's review and merge), print `QUEUE WAITING: <ID>` and STOP. Change nothing. Queue tasks often touch the same files, so each one must start from a main that already contains the previous one.
+3. Otherwise take the first `- [ ]` ID. If there are no `- [ ]` lines, print `QUEUE EMPTY` and STOP.
 4. Claim the task immediately:
    - `git checkout -b fallback/<id> origin/{{MAIN}}`;
    - change `status: pending` to `status: in_progress` in `.agents/tasks/<ID>.md`;
