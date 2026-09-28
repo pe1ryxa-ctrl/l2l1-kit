@@ -23,6 +23,8 @@ Read `.agents/tasks/<ID>.md` in full: SSOT Context, goal, steps, constraints, De
 
 Hard rules:
 - Work ONLY on `fallback/<id>`. NEVER push to or merge into {{MAIN}}.
+- Local executors work in parallel: do NOT modify {{FORBIDDEN_PATHS}}. If the task cannot be done without them, stop and report it.
+- Timing/platform tests: thresholds relative to a baseline measured in the same run; OS-dependent checks `skipif` with a reason. The suite must pass on Windows and Linux.
 - Production data, secrets and live services are absent here by design. Do not create or imitate them; test with mocks and fakes.
 - For DoD items that need production data or live services, write in the report the exact commands the Architect should run locally. Never fake numbers.
 - No paid API calls and no keys. Never edit `.env`. Never deploy or restart anything.
