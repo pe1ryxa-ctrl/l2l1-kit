@@ -15,6 +15,8 @@ l2l1-kit/
 │   ├── workflows/task.md         # воркфлоу Antigravity /task
 │   ├── gemini-global-AGENTS.md   # ~/.gemini/config/AGENTS.md (глобально для машини, без назв екосистем)
 │   ├── project-rules.md          # скелет технічних правил (створюється лише якщо відсутній)
+│   ├── cloud_queue.md            # шаблон нічної хмарної черги <P>/.agents/cloud_queue.md (Архітектор копіює вручну)
+│   ├── night-queue-routine.md    # промпт routine нічної черги (RemoteTrigger, cron) з параметрами {{…}}
 │   └── Global_*.md               # стаби глобального SSOT (лише якщо відсутні)
 ├── skills/                       # спільні скіли Gemini → ~/.gemini/config/skills/
 └── examples/ecosystem.toml       # приклад опису екосистеми
