@@ -112,7 +112,8 @@ def commit_push(root, apply, message):
     if git(root, "status", "--porcelain", "--", REL).stdout.strip():
         sys.exit(f"{REL} has uncommitted changes — commit or discard them first")
     for attempt in range(1, 6):
-        git(root, "pull", "-q", "--ff-only", "origin", br)
+        # --rebase: local unpushed commits in OTHER files (e.g. a new script) must not block the channel
+        git(root, "pull", "-q", "--rebase", "origin", br)
         write(path, apply(read(path)))
         git(root, "add", "--", REL)
         git(root, "commit", "-q", "-m", message + "\n\nCo-Authored-By: Claude <noreply@anthropic.com>")
