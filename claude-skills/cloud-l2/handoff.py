@@ -168,6 +168,12 @@ def cmd_watch(root, side, interval, max_iter):
 
 
 def main():
+    # Windows consoles default to cp1252: Cyrillic in the channel would crash print()
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     a = sub.add_parser("add")
