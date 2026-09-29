@@ -170,6 +170,19 @@ def main():
         if not os.path.exists(gp):
             results.append((write(gp, render(read(os.path.join(TPL, g)), base).replace("YYYY-MM-DD", datetime.date.today().isoformat()), dry), g))
 
+    # --- скіли Claude (обидві сесії L2: основна й хмарна — з клону meta-репозиторію) ---
+    cs = os.path.join(KIT, "claude-skills")
+    if os.path.isdir(cs):
+        for s_name in sorted(os.listdir(cs)):
+            sdir = os.path.join(cs, s_name)
+            if not os.path.isdir(sdir):
+                continue
+            for fn in sorted(os.listdir(sdir)):
+                src = os.path.join(sdir, fn)
+                if os.path.isfile(src):
+                    results.append((write(os.path.join(root, ".claude", "skills", s_name, fn), read(src), dry),
+                                    f".claude/skills/{s_name}/{fn}"))
+
     # --- підпроєкти ---
     for p in cfg.get("projects", []):
         d = os.path.join(root, p["dir"])
