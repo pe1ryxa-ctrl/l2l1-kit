@@ -5,7 +5,8 @@
 
 Підкоманди:
   body      — JSON тіла RemoteTrigger create (промпт виконавця нової задачі або ітерації N >= 2)
-  watch     — сторож: чекає нового коміту на гілці з `status: reported` (і за потреби розділу ітерації)
+  watch     — сторож: звіт уже на гілці при старті → ALREADY REPORTED; інакше чекає нового коміту з
+              `status: reported` (і за потреби розділу ітерації); збої мережі — повтор, BLIND лише N разів поспіль
   idle      — чи не працює конвеєр із робочого дерева (за cwd і командним рядком). 0 IDLE, 1 BUSY, 3 UNKNOWN
   changelog — розв'язати ОДИН конфлікт злиття в Changelog-файлі: обидва записи, гілка зверху
   close     — останній вердикт VERIFIED → status: done, git add, git mv у tasks/done/, [x] у черзі, коміт лише цих шляхів
@@ -132,56 +133,97 @@ def cmd_body(a):
 
 
 # ---------------------------------------------------------------- watch
+class Blind(Exception):
+    """git did not see origin (DNS, network, auth, a racing push): transient inside the loop, fatal only in a row."""
+
+
+def hhmm():
+    return dt.datetime.now().strftime('%H:%M')
+
+
 def remote_sha(repo, branch):
-    """sha of refs/heads/<branch> on origin via ls-remote; None if absent; exits 2 if ls-remote fails."""
+    """sha of refs/heads/<branch> on origin via ls-remote; None if absent; raises Blind if ls-remote fails."""
     r = run(["git", "ls-remote", "--heads", "origin", f"refs/heads/{branch}"], cwd=repo, check=False)
     if r.returncode != 0:
-        print(f"BLIND: git ls-remote failed: {r.stderr.strip()}")
-        sys.exit(2)
+        raise Blind(f"git ls-remote failed: {r.stderr.strip()}")
     line = r.stdout.strip().splitlines()
     return line[0].split()[0] if line else None
 
 
 def fetch_exact(repo, branch, sha):
-    """Fetch the branch and read it by sha (not by the shared FETCH_HEAD). Exit 2 if the fetch cannot see it."""
+    """Fetch the branch and read it by sha (not by the shared FETCH_HEAD). Raises Blind if the fetch cannot see it."""
     run(["git", "update-ref", "-d", f"refs/oneoff-watch/{branch}"], cwd=repo, check=False)  # no stale ref may pass the check
     r = run(["git", "fetch", "-q", "origin", f"+refs/heads/{branch}:refs/oneoff-watch/{branch}"], cwd=repo, check=False)
     got = run(["git", "rev-parse", "-q", "--verify", f"refs/oneoff-watch/{branch}"], cwd=repo, check=False).stdout.strip()
     if r.returncode != 0 or got != sha:
-        print(f"BLIND: fetch of {branch} did not deliver {sha[:10]} (got {got[:10] or 'nothing'}): {r.stderr.strip()}")
-        sys.exit(2)
+        raise Blind(f"fetch of {branch} did not deliver {sha[:10]} (got {got[:10] or 'nothing'}): {r.stderr.strip()}")
+
+
+def is_reported(repo, sha, a):
+    """The task file at <sha> has `status: reported` in its frontmatter (and the --require text, if given)."""
+    s = run(["git", "show", f"{sha}:{a.task}"], cwd=repo, check=False)
+    fm = s.stdout.split("\n---", 2)[0] if s.stdout.startswith("---") else s.stdout[:2000]
+    return (s.returncode == 0 and bool(re.search(r"^status:\s*reported\s*$", fm, re.M))
+            and (not a.require or a.require in s.stdout))
 
 
 def cmd_watch(a):
     repo = a.repo
     probe = a.self_check or a.main
-    psha = remote_sha(repo, probe)
-    if not psha:
-        print(f"SELF-CHECK FAILED: origin has no '{probe}' — the watcher would be blind")
-        sys.exit(2)
-    fetch_exact(repo, probe, psha)  # the same mechanism the loop uses must see an existing branch
-    start = remote_sha(repo, a.branch)
-    print(f"self-check ok ({probe} {psha[:10]}); waiting for {a.branch} "
-          f"(now {start[:10] if start else 'absent'}): new commit with status reported"
-          + (f" + '{a.require}'" if a.require else ""), flush=True)
-    last = start
-    for n in range(a.max):
-        sha = remote_sha(repo, a.branch)
-        if sha and sha != last:
-            last = sha
-            fetch_exact(repo, a.branch, sha)
-            s = run(["git", "show", f"{sha}:{a.task}"], cwd=repo, check=False)
-            fm = s.stdout.split("\n---", 2)[0] if s.stdout.startswith("---") else s.stdout[:2000]
-            if s.returncode == 0 and re.search(r"^status:\s*reported\s*$", fm, re.M) \
-                    and (not a.require or a.require in s.stdout):
-                log = run(["git", "log", "--oneline", "-3", sha], cwd=repo, check=False).stdout
-                print(f"REPORTED {dt.datetime.now().strftime('%H:%M')} {a.branch} {sha[:10]}\n{log}")
+
+    def start_state():
+        psha = remote_sha(repo, probe)
+        if not psha:
+            print(f"SELF-CHECK FAILED: origin has no '{probe}' — the watcher would be blind")
+            sys.exit(2)
+        fetch_exact(repo, probe, psha)  # the same mechanism the loop uses must see an existing branch
+        start = remote_sha(repo, a.branch)
+        if start:
+            fetch_exact(repo, a.branch, start)
+        return psha, start, bool(start) and is_reported(repo, start, a)
+
+    for attempt in range(1, a.start_retries + 1):
+        try:
+            psha, start, done = start_state()
+            break
+        except Blind as e:
+            if attempt >= a.start_retries:
                 cleanup_refs(repo, probe, a.branch)
-                return
-            print(f"{dt.datetime.now().strftime('%H:%M')} {a.branch} moved to {sha[:10]} (not reported yet)", flush=True)
+                print(f"SELF-CHECK FAILED after {attempt} attempt(s) — the watcher would be blind: {e}")
+                sys.exit(2)
+            print(f"{hhmm()} self-check attempt {attempt}/{a.start_retries} failed, retrying: {e}", flush=True)
+            time.sleep(min(a.interval, 15))
+    if done:  # the report was on the branch before the watcher started (урок DDL 30.09: звіт ~2 год лежав непоміченим)
+        log = run(["git", "log", "--oneline", "-3", start], cwd=repo, check=False).stdout
+        print(f"ALREADY REPORTED {start[:10]} {a.branch} (on the branch at start, {hhmm()})\n{log}")
+        cleanup_refs(repo, probe, a.branch)
+        return
+    print(f"self-check ok ({probe} {psha[:10]}); waiting for {a.branch} "
+          f"(now {start[:10] + ', not reported' if start else 'absent'}): new commit with status reported"
+          + (f" + '{a.require}'" if a.require else ""), flush=True)
+    last, fails = start, 0
+    for n in range(a.max):
+        try:
+            sha = remote_sha(repo, a.branch)
+            if sha and sha != last:
+                fetch_exact(repo, a.branch, sha)
+                if is_reported(repo, sha, a):
+                    log = run(["git", "log", "--oneline", "-3", sha], cwd=repo, check=False).stdout
+                    print(f"REPORTED {hhmm()} {a.branch} {sha[:10]}\n{log}")
+                    cleanup_refs(repo, probe, a.branch)
+                    return
+                print(f"{hhmm()} {a.branch} moved to {sha[:10]} (not reported yet)", flush=True)
+                last = sha  # only after a successful read: a failed fetch is read again on the next poll
+            fails = 0
+        except Blind as e:
+            fails += 1
+            if fails >= a.max_failures:
+                cleanup_refs(repo, probe, a.branch)
+                print(f"BLIND: {fails} consecutive failures, last: {e}")
+                sys.exit(2)
+            print(f"{hhmm()} transient failure {fails}/{a.max_failures}, retrying on the next poll: {e}", flush=True)
         if a.heartbeat and n and n % a.heartbeat == 0:
-            print(f"{dt.datetime.now().strftime('%H:%M')} still waiting ({a.branch} {last[:10] if last else 'absent'})",
-                  flush=True)
+            print(f"{hhmm()} still waiting ({a.branch} {last[:10] if last else 'absent'})", flush=True)
         time.sleep(a.interval)
     cleanup_refs(repo, probe, a.branch)
     print("TIMEOUT")
@@ -410,6 +452,9 @@ def main():
     w.add_argument("--interval", type=int, default=120)
     w.add_argument("--max", type=int, default=180)
     w.add_argument("--heartbeat", type=int, default=0, help="print 'still waiting' every N polls (0 = off)")
+    w.add_argument("--max-failures", type=int, default=10,
+                   help="exit 2 BLIND only after N consecutive ls-remote/fetch failures (transient DNS etc. are retried)")
+    w.add_argument("--start-retries", type=int, default=3, help="attempts of the start self-check before SELF-CHECK FAILED")
     w.set_defaults(fn=cmd_watch)
 
     i = sp.add_parser("idle", help="exit 0 IDLE / 1 BUSY / 3 UNKNOWN — pipeline running from this working tree?")
