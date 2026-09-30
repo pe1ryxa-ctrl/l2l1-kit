@@ -182,6 +182,7 @@ def cmd_watch(a):
             fetch_exact(repo, a.branch, start)
         return psha, start, bool(start) and is_reported(repo, start, a)
 
+    a.start_retries = max(1, a.start_retries)
     for attempt in range(1, a.start_retries + 1):
         try:
             psha, start, done = start_state()
