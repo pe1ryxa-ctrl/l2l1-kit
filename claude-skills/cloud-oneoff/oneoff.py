@@ -76,6 +76,7 @@ Hard rules:
 - BEFORE changes, record the exact failing-test list of `{test_cmd}` as the baseline; after changes the set must be identical or smaller. NEVER edit or skip existing tests to hide failures, unless the task file explicitly allows a named edit.
 - Run the mutations the task demands; each must turn a test red. Paste results; state plainly if any survives.
 - Commits start with `[L2 fallback] {id}:` and end with the line `{coauthor}`. `git add` by name only. Update the SSOT files the task requires{ssot_iter}.
+- Before `status: reported`, three gates (kit protocol 9088ca1): (1) the FULL `{test_cmd}` run from a clean copy of your commit (`git archive <sha>`), with exact passed/failed/skipped counts and every failure listed; a failure absent on the base is your regression — no `reported`. (2) SSOT is append-only: `git diff <base> -- Changelog_* Context_* Plan_* USER_GUIDE.md` shows no deleted line belonging to other tasks or history (outdated statements of current state in Context may be updated, not removed — say which); only your own done item may leave Plan. (3) The report lists every change outside the task's scope, or says «Немає».
 - No changes outside the task's scope; describe them in the report instead. If the task is ambiguous, contradicts the code, or needs an owner decision, do the safe part, describe the blocker, and still finish with `status: reported`.
 {extra}
 ## Step 3: report and finish
