@@ -232,3 +232,15 @@ def test_missing_probe_branch_fails_without_retry(env, monkeypatch, capsys):
     code, out, sleeps = run_watch(monkeypatch, capsys, env, "--self-check", "no-such-branch")
     assert code == 2 and "SELF-CHECK FAILED: origin has no 'no-such-branch'" in out
     assert sleeps == 0
+
+
+def test_killed_watcher_leaves_no_ref(env, monkeypatch, capsys):
+    """Сторож, убитий посеред очікування (TaskStop, перезапуск сесії), не лишає ref на стару історію."""
+    commit(env["work"], task_text("in_progress"), "taken", branch=BRANCH, push=True)
+
+    def kill(n):
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        run_watch(monkeypatch, capsys, env, "--max", "5", on_sleep=kill)
+    assert no_watch_refs(env)

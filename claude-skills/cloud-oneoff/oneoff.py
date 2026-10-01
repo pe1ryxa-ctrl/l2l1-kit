@@ -152,9 +152,16 @@ def remote_sha(repo, branch):
 
 def fetch_exact(repo, branch, sha):
     """Fetch the branch and read it by sha (not by the shared FETCH_HEAD). Raises Blind if the fetch cannot see it."""
-    run(["git", "update-ref", "-d", f"refs/oneoff-watch/{branch}"], cwd=repo, check=False)  # no stale ref may pass the check
-    r = run(["git", "fetch", "-q", "origin", f"+refs/heads/{branch}:refs/oneoff-watch/{branch}"], cwd=repo, check=False)
-    got = run(["git", "rev-parse", "-q", "--verify", f"refs/oneoff-watch/{branch}"], cwd=repo, check=False).stdout.strip()
+    ref = f"refs/oneoff-watch/{branch}"
+    run(["git", "update-ref", "-d", ref], cwd=repo, check=False)  # no stale ref may pass the check
+    try:
+        r = run(["git", "fetch", "-q", "origin", f"+refs/heads/{branch}:{ref}"], cwd=repo, check=False)
+        got = run(["git", "rev-parse", "-q", "--verify", ref], cwd=repo, check=False).stdout.strip()
+    finally:
+        # The ref lives only for this read (урок DDL 01.10: сторож, убитий ззовні, лишив ref, що тримав
+        # стару історію після переписування git). The objects stay until gc prunes them (2 weeks by default),
+        # and is_reported reads by sha, so nothing is lost.
+        run(["git", "update-ref", "-d", ref], cwd=repo, check=False)
     if r.returncode != 0 or got != sha:
         raise Blind(f"fetch of {branch} did not deliver {sha[:10]} (got {got[:10] or 'nothing'}): {r.stderr.strip()}")
 
